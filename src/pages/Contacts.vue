@@ -9,7 +9,7 @@
             Manage your customer relationships
           </p>
         </div>
-        <BaseButton variant="primary">
+        <BaseButton variant="primary" @click="() => openContactModal()">
           Add Contact
         </BaseButton>
       </div>
@@ -77,7 +77,7 @@
             <span :class="getStatusClass(contact.status)" class="status-badge">
               {{ contact.status }}
             </span>
-            <button class="text-gray-400 hover:text-gray-600">
+            <button class="text-gray-400 hover:text-gray-600" @click="openContactModal(contact)">
               <EllipsisVerticalIcon class="h-5 w-5" />
             </button>
           </div>
@@ -94,12 +94,27 @@
           Get started by creating a new contact.
         </p>
         <div class="mt-6">
-          <BaseButton variant="primary">
+          <BaseButton variant="primary" @click="() => openContactModal()">
             Add Contact
           </BaseButton>
         </div>
       </div>
     </div>
+
+    <!-- Contact Modal -->
+    <BaseModal
+      :show="showContactModal"
+      :title="selectedContact ? 'Edit Contact' : 'Add Contact'"
+      size="lg"
+      @close="closeContactModal"
+    >
+      <ContactForm
+        :contact="selectedContact"
+        :is-submitting="isSubmitting"
+        @submit="handleContactSubmit"
+        @cancel="closeContactModal"
+      />
+    </BaseModal>
   </div>
 </template>
 
@@ -108,6 +123,9 @@ import { ref } from 'vue'
 import BaseButton from '@/components/base/BaseButton.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import BaseSelect from '@/components/base/BaseSelect.vue'
+import BaseModal from '@/components/base/BaseModal.vue'
+import ContactForm from '@/components/forms/ContactForm.vue'
+import type { Contact, ContactFormData } from '@/types'
 import {
   UsersIcon,
   EnvelopeIcon,
@@ -117,6 +135,9 @@ import {
 
 const searchQuery = ref('')
 const statusFilter = ref('')
+const showContactModal = ref(false)
+const selectedContact = ref<Contact | null>(null)
+const isSubmitting = ref(false)
 
 const statusOptions = [
   { value: '', label: 'All Statuses' },
@@ -125,14 +146,18 @@ const statusOptions = [
   { value: 'customer', label: 'Customer' },
 ]
 
-const sampleContacts = ref([
+const sampleContacts = ref<Contact[]>([
   {
     id: '1',
     name: 'John Doe',
     email: 'john@example.com',
     phone: '+1 (555) 123-4567',
     company: 'Acme Corp',
-    status: 'customer'
+    position: 'CEO',
+    status: 'customer',
+    notes: 'Important client',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z'
   },
   {
     id: '2',
@@ -140,7 +165,11 @@ const sampleContacts = ref([
     email: 'jane@example.com',
     phone: '+1 (555) 987-6543',
     company: 'Tech Solutions',
-    status: 'prospect'
+    position: 'CTO',
+    status: 'prospect',
+    notes: 'Interested in our services',
+    created_at: '2024-01-02T00:00:00Z',
+    updated_at: '2024-01-02T00:00:00Z'
   },
   {
     id: '3',
@@ -148,7 +177,11 @@ const sampleContacts = ref([
     email: 'bob@example.com',
     phone: '+1 (555) 456-7890',
     company: 'Digital Agency',
-    status: 'lead'
+    position: 'Owner',
+    status: 'lead',
+    notes: 'New lead from website',
+    created_at: '2024-01-03T00:00:00Z',
+    updated_at: '2024-01-03T00:00:00Z'
   }
 ])
 
@@ -167,6 +200,50 @@ function getStatusClass(status: string) {
     case 'prospect': return 'status-badge-warning'
     case 'lead': return 'status-badge-info'
     default: return 'status-badge-info'
+  }
+}
+
+function openContactModal(contact: Contact | null = null) {
+  selectedContact.value = contact
+  showContactModal.value = true
+}
+
+function closeContactModal() {
+  showContactModal.value = false
+  selectedContact.value = null
+}
+
+async function handleContactSubmit(data: ContactFormData) {
+  isSubmitting.value = true
+  
+  try {
+    if (selectedContact.value) {
+      // Update existing contact
+      const index = sampleContacts.value.findIndex(c => c.id === selectedContact.value!.id)
+      if (index !== -1) {
+        sampleContacts.value[index] = {
+          ...sampleContacts.value[index],
+          ...data,
+          updated_at: new Date().toISOString()
+        } as Contact
+      }
+    } else {
+      // Create new contact
+      const newContact: Contact = {
+        id: Date.now().toString(),
+        ...data,
+        avatar: undefined,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      sampleContacts.value.unshift(newContact)
+    }
+    
+    closeContactModal()
+  } catch (error) {
+    console.error('Error saving contact:', error)
+  } finally {
+    isSubmitting.value = false
   }
 }
 </script>

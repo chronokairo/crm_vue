@@ -1,4 +1,4 @@
-import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios'
+import axios, { AxiosError, type AxiosInstance, type AxiosResponse } from 'axios'
 import type { ApiResponse, ApiError } from '@/types'
 
 // Create axios instance
@@ -40,7 +40,7 @@ api.interceptors.response.use(
 
     // Format error response
     const apiError: ApiError = {
-      message: error.response?.data?.message || error.message || 'An error occurred',
+      message: (error.response?.data as any)?.message || error.message || 'An error occurred',
       code: error.response?.status || 'NETWORK_ERROR',
       details: error.response?.data
     }

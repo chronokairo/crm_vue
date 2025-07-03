@@ -48,7 +48,7 @@ export const useActivitiesStore = defineStore('activities', () => {
   const todaysActivities = computed(() => {
     const today = new Date().toISOString().split('T')[0]
     return activities.value.filter(activity => 
-      activity.date.startsWith(today)
+      activity.date && activity.date.startsWith(today)
     )
   })
   const completedActivities = computed(() => 
