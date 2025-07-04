@@ -5,28 +5,28 @@
       <button @click="openNewDealModal">+ Novo Deal</button>
     </div>
     <div class="kanban">
-      <div
+      <draggable
         v-for="stage in stages"
         :key="stage"
+        :list="dealsByStage[stage]"
+        group="deals"
         class="kanban-column"
-        @dragover.prevent
-        @drop="onDrop(stage)"
+        item-key="id"
+        @end="onDragEnd(stage)"
       >
-        <div class="kanban-column-header">{{ stage }}</div>
-        <div
-          v-for="deal in dealsByStage(stage)"
-          :key="deal.id"
-          class="deal-card"
-          draggable="true"
-          @dragstart="onDragStart(deal)"
-        >
-          <div class="deal-title">{{ deal.title }}</div>
-          <div class="deal-client">Cliente: {{ deal.clientName }}</div>
-          <div class="deal-value">Valor: <span>R$ {{ deal.value.toLocaleString('pt-BR') }}</span></div>
-          <div class="deal-date">Fechamento: <span>{{ deal.expectedCloseDate }}</span></div>
-          <button class="edit-btn" @click="openEditDealModal(deal)">Editar</button>
-        </div>
-      </div>
+        <template #header>
+          <div class="kanban-column-header">{{ stage }}</div>
+        </template>
+        <template #item="{ element: deal }">
+          <div class="deal-card">
+            <div class="deal-title">{{ deal.title }}</div>
+            <div class="deal-client">Cliente: {{ deal.clientName }}</div>
+            <div class="deal-value">Valor: <span>R$ {{ deal.value.toLocaleString('pt-BR') }}</span></div>
+            <div class="deal-date">Fechamento: <span>{{ deal.expectedCloseDate }}</span></div>
+            <button class="edit-btn" @click="openEditDealModal(deal)">Editar</button>
+          </div>
+        </template>
+      </draggable>
     </div>
 
     <!-- Modal Novo/Editar Deal -->
@@ -70,10 +70,12 @@
 </template>
 
 <script>
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
+import { VueDraggableNext } from 'vuedraggable'
 
 export default {
   name: 'DealsBoard',
+  components: { draggable: VueDraggableNext },
   setup() {
     // Mock de clientes
     const clients = ref([
@@ -119,23 +121,26 @@ export default {
       expectedCloseDate: ''
     })
 
-    // Drag and drop
-    const draggedDeal = ref(null)
-    function onDragStart(deal) {
-      draggedDeal.value = deal
-    }
-    function onDrop(stage) {
-      return () => {
-        if (draggedDeal.value && draggedDeal.value.stage !== stage) {
-          draggedDeal.value.stage = stage
+    // Organiza os deals por estágio para uso no draggable
+    const dealsByStage = reactive({})
+    stages.value.forEach(stage => {
+      dealsByStage[stage] = computed({
+        get: () => deals.value.filter(d => d.stage === stage),
+        set: (newList) => {
+          // Atualiza o estágio dos deals movidos
+          newList.forEach(deal => {
+            const d = deals.value.find(x => x.id === deal.id)
+            if (d) d.stage = stage
+          })
         }
-        draggedDeal.value = null
-      }
-    }
+      })
+    })
 
-    // Filtrar deals por estágio
-    function dealsByStage(stage) {
-      return deals.value.filter(d => d.stage === stage)
+    // Atualiza o estágio ao final do arrasto
+    function onDragEnd(stage) {
+      return (evt) => {
+        // O setter do computed já atualiza o estágio
+      }
     }
 
     // Modal handlers
@@ -175,7 +180,8 @@ export default {
         deals.value.push({
           ...form,
           id: Date.now(),
-          clientName: client.name
+          clientName: client.name,
+          stage: form.stage // garante que vai para o estágio selecionado
         })
       }
       showModal.value = false
@@ -193,8 +199,7 @@ export default {
       openEditDealModal,
       closeModal,
       saveDeal,
-      onDragStart,
-      onDrop
+      onDragEnd
     }
   }
 }
@@ -265,7 +270,7 @@ export default {
   text-shadow: 0 2px 8px rgba(37,99,235,0.06);
 }
 .deal-card {
-  background: #f4f8fb;
+  background: #fff;
   border-radius: 8px;
   border: 1.5px solid #b6c6db;
   box-shadow: 0 2px 12px rgba(34,48,74,0.10);
