@@ -1,4 +1,8 @@
 <script setup>
+import { useToast } from './composables/toast'
+import { provide } from 'vue'
+const toast = useToast()
+provide('toast', toast)
 </script>
 
 <template>

@@ -4,6 +4,17 @@
       <h2>Funil de Vendas</h2>
       <button @click="openNewDealModal">+ Novo Deal</button>
     </div>
+    <DealSearch @search="onSearch" />
+    <!-- Adicionar Cliente -->
+    <div class="clientes-form">
+      <form @submit.prevent="addClient">
+        <input v-model="newClientName" placeholder="Nome do cliente" required />
+        <button type="submit">Adicionar Cliente</button>
+      </form>
+      <div class="clientes-list">
+        <span v-for="c in clients" :key="c.id" class="cliente-pill">{{ c.name }}</span>
+      </div>
+    </div>
     <div class="kanban">
       <draggable
         v-for="stage in stages"
@@ -15,16 +26,16 @@
         @end="onDragEnd(stage)"
       >
         <template #header>
-          <div class="kanban-column-header">{{ stage }}</div>
+          <div class="kanban-column-header">
+            <span>{{ stage }}</span>
+            <span class="deal-count">({{ countByStage(stage) }})</span>
+            <span v-if="stage === 'Lead'">🟡</span>
+            <span v-else-if="stage === 'Qualificado'">🟠</span>
+            <span v-else>🟢</span>
+          </div>
         </template>
         <template #item="{ element: deal }">
-          <div class="deal-card">
-            <div class="deal-title">{{ deal.title }}</div>
-            <div class="deal-client">Cliente: {{ deal.clientName }}</div>
-            <div class="deal-value">Valor: <span>R$ {{ deal.value.toLocaleString('pt-BR') }}</span></div>
-            <div class="deal-date">Fechamento: <span>{{ deal.expectedCloseDate }}</span></div>
-            <button class="edit-btn" @click="openEditDealModal(deal)">Editar</button>
-          </div>
+          <DealCard :deal="deal" @edit="openEditDealModal" />
         </template>
       </draggable>
     </div>
@@ -70,46 +81,21 @@
 </template>
 
 <script>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, inject } from 'vue'
 import { VueDraggableNext } from 'vuedraggable'
+import { useDealStore } from '@/stores/deal'
+import { useLocalStorageStore } from '@/stores/localStorage'
+import DealCard from './DealCard.vue'
+import DealSearch from './DealSearch.vue'
 
 export default {
   name: 'DealsBoard',
-  components: { draggable: VueDraggableNext },
+  components: { draggable: VueDraggableNext, DealCard },
   setup() {
-    // Mock de clientes
-    const clients = ref([
-      { id: 1, name: 'João Silva' },
-      { id: 2, name: 'Maria Souza' },
-      { id: 3, name: 'Empresa X' }
-    ])
-
-    // Estágios do funil
+    const store = useDealStore()
+    useLocalStorageStore(store)
+    const toast = inject('toast')
     const stages = ref(['Lead', 'Qualificado', 'Fechado'])
-
-    // Deals mockados
-    const deals = ref([
-      {
-        id: 1,
-        title: 'Proposta para João',
-        clientId: 1,
-        clientName: 'João Silva',
-        value: 5000,
-        stage: 'Lead',
-        expectedCloseDate: '2025-07-15'
-      },
-      {
-        id: 2,
-        title: 'Negociação com Maria',
-        clientId: 2,
-        clientName: 'Maria Souza',
-        value: 8000,
-        stage: 'Qualificado',
-        expectedCloseDate: '2025-07-20'
-      }
-    ])
-
-    // Modal e formulário
     const showModal = ref(false)
     const editingDeal = ref(null)
     const form = reactive({
@@ -120,30 +106,45 @@ export default {
       stage: stages.value[0],
       expectedCloseDate: ''
     })
+    const newClientName = ref('')
+    const searchTerm = ref('')
+    function onSearch(term) {
+      searchTerm.value = term.toLowerCase()
+    }
 
     // Organiza os deals por estágio para uso no draggable
     const dealsByStage = reactive({})
     stages.value.forEach(stage => {
       dealsByStage[stage] = computed({
-        get: () => deals.value.filter(d => d.stage === stage),
+        get: () => store.deals.filter(d => d.stage === stage &&
+          (!searchTerm.value ||
+            d.title.toLowerCase().includes(searchTerm.value) ||
+            d.clientName.toLowerCase().includes(searchTerm.value) ||
+            (d.value + '').includes(searchTerm.value)
+          )
+        ),
         set: (newList) => {
-          // Atualiza o estágio dos deals movidos
           newList.forEach(deal => {
-            const d = deals.value.find(x => x.id === deal.id)
-            if (d) d.stage = stage
+            store.moveDeal(deal.id, stage)
           })
         }
       })
     })
+    // Contadores de deals por coluna
+    const countByStage = (stage) => store.deals.filter(d => d.stage === stage &&
+      (!searchTerm.value ||
+        d.title.toLowerCase().includes(searchTerm.value) ||
+        d.clientName.toLowerCase().includes(searchTerm.value) ||
+        (d.value + '').includes(searchTerm.value)
+      )
+    ).length
 
-    // Atualiza o estágio ao final do arrasto
     function onDragEnd(stage) {
       return (evt) => {
         // O setter do computed já atualiza o estágio
       }
     }
 
-    // Modal handlers
     function openNewDealModal() {
       editingDeal.value = null
       Object.assign(form, {
@@ -164,33 +165,44 @@ export default {
     function closeModal() {
       showModal.value = false
     }
-
-    // Salvar novo ou editar
     function saveDeal() {
-      const client = clients.value.find(c => c.id === form.clientId)
-      if (!client) return
+      // Garante que clientId e value são numéricos
+      form.clientId = Number(form.clientId)
+      form.value = Number(form.value)
+      const client = store.clients.find(c => c.id === form.clientId)
+      if (!client) {
+        toast.show('Selecione um cliente válido', 'error')
+        return
+      }
       if (editingDeal.value) {
-        // Editar
-        Object.assign(editingDeal.value, {
-          ...form,
-          clientName: client.name
-        })
+        store.updateDeal({ ...form, clientName: client.name })
+        toast.show('Negócio atualizado com sucesso!', 'success')
       } else {
-        // Novo
-        deals.value.push({
-          ...form,
-          id: Date.now(),
-          clientName: client.name,
-          stage: form.stage // garante que vai para o estágio selecionado
-        })
+        store.addDeal({ ...form, clientName: client.name })
+        toast.show('Negócio criado com sucesso!', 'success')
       }
       showModal.value = false
+    }
+    function addClient() {
+      if (!newClientName.value.trim()) {
+        toast.show('Digite o nome do cliente', 'error')
+        return
+      }
+      if (store.clients.some(c => c.name.toLowerCase() === newClientName.value.trim().toLowerCase())) {
+        toast.show('Cliente já existe', 'error')
+        return
+      }
+      store.addClient(newClientName.value)
+      toast.show('Cliente adicionado!', 'success')
+      newClientName.value = ''
     }
 
     return {
       stages,
-      deals,
-      clients,
+      deals: store.deals,
+      clients: store.clients,
+      newClientName,
+      addClient,
       showModal,
       editingDeal,
       form,
@@ -199,7 +211,8 @@ export default {
       openEditDealModal,
       closeModal,
       saveDeal,
-      onDragEnd
+      onDragEnd,
+      onSearch
     }
   }
 }
@@ -243,6 +256,45 @@ export default {
 .board-header button:hover {
   background: #22304a;
 }
+.clientes-form {
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.clientes-form form {
+  display: flex;
+  gap: 8px;
+}
+.clientes-form input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1.5px solid #d1e0ee;
+  font-size: 1rem;
+}
+.clientes-form button {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.clientes-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cliente-pill {
+  background: #e0e7ef;
+  color: #22304a;
+  border-radius: 12px;
+  padding: 4px 14px;
+  font-size: 0.98rem;
+  font-weight: 700;
+}
 .kanban {
   display: flex;
   gap: 32px;
@@ -268,6 +320,9 @@ export default {
   margin-bottom: 12px;
   letter-spacing: 0.5px;
   text-shadow: 0 2px 8px rgba(37,99,235,0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 .deal-card {
   background: #fff;
@@ -408,5 +463,11 @@ export default {
   .kanban-column {
     min-width: 0;
   }
+}
+.deal-stage {
+  font-size: 1.04rem;
+  color: #2563eb;
+  font-weight: 700;
+  margin-bottom: 2px;
 }
 </style>
